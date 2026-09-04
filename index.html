@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>港漂生存指南：俗語大作戰</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'hk-slang-game';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        // Expose to global scope for the main script to use
+        window.firebaseApp = initializeApp(firebaseConfig);
+        window.db = getFirestore(window.firebaseApp);
+        window.auth = getAuth(window.firebaseApp);
+        window.appId = appId;
+
+        // Auto-authenticate
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(window.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+                console.log("Firebase Auth Ready");
+            } catch (error) {
+                console.error("Auth error:", error);
+            }
+        };
+        initAuth();
+    </script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans HK', sans-serif;
+            background-color: #fdfbf7;
+            background-image: 
+                linear-gradient(#e5e7eb 2px, transparent 2px),
+                linear-gradient(90deg, #e5e7eb 2px, transparent 2px);
+            background-size: 30px 30px;
+            color: #1e293b;
+            overflow-x: hidden;
+            touch-action: manipulation;
+        }
+        
+        .retro-container { border: 4px solid #064e3b; background-color: #fffbeb; box-shadow: 8px 8px 0px #064e3b; border-radius: 16px; }
+        .retro-title { color: #dc2626; text-shadow: 2px 2px 0px #fcd34d; font-weight: 900; }
+        .retro-btn-primary { background-color: #dc2626; color: white; border: 3px solid #7f1d1d; box-shadow: 4px 4px 0px #7f1d1d; border-radius: 8px; transition: all 0.1s; }
+        .retro-btn-primary:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #7f1d1d; }
+        .retro-btn-secondary { background-color: #059669; color: white; border: 3px solid #064e3b; box-shadow: 4px 4px 0px #064e3b; border-radius: 8px; transition: all 0.1s; }
+        .retro-btn-secondary:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #064e3b; }
+        
+        .btn-option { transition: all 0.1s ease; border: 3px solid #1e293b; box-shadow: 4px 4px 0px #1e293b; border-radius: 8px; background-color: white; color: #1e293b; }
+        .btn-option:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #1e293b; }
+
+        .fade-enter { opacity: 0; transform: translateY(10px); transition: all 0.3s ease; }
+        .fade-enter-active { opacity: 1; transform: translateY(0); }
+        .hidden-screen { display: none !important; }
+
+        /* Timer Bar */
+        #timer-bar { transition: width 0.1s linear; }
+        .timer-warning { background-color: #dc2626 !important; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div id="game-container" class="max-w-md w-full retro-container relative flex flex-col h-[750px] max-h-[90vh] overflow-hidden">
+        
+        <div id="screen-start" class="p-8 flex flex-col items-center justify-center h-full text-center fade-enter fade-enter-active bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+            <div class="text-7xl mb-4">☕🍞</div>
+            <div class="bg-white border-4 border-emerald-800 px-6 py-2 rounded-full mb-4 transform -rotate-2">
+                <h1 class="text-3xl retro-title tracking-widest">港漂生存指南</h1>
+            </div>
+            <h2 class="text-2xl font-bold mb-6 text-emerald-800">廣東俗語大作戰</h2>
+            <button onclick="startGame()" class="w-full retro-btn-primary font-bold py-4 px-8 text-xl mb-4">
+                開始挑戰
+            </button>
+            <button onclick="showLeaderboardScreen()" class="w-full retro-btn-secondary font-bold py-3 px-8 text-lg">
+                🏆 查看龍虎榜
+            </button>
+        </div>
+
+        <div id="screen-game" class="hidden-screen p-5 flex flex-col h-full relative bg-white">
+            <!-- Timer Bar -->
+            <div class="absolute top-0 left-0 w-full h-2 bg-slate-200">
+                <div id="timer-bar" class="h-full bg-emerald-500 w-full rounded-r-full"></div>
+            </div>
+
+            <!-- Header -->
+            <div class="flex justify-between items-center mt-4 mb-4 border-b-2 border-emerald-800 pb-3">
+                <div class="text-emerald-800 font-bold text-sm bg-emerald-100 px-3 py-1 rounded-full border border-emerald-300">
+                    關卡 <span id="ui-question-count">1/20</span>
+                </div>
+                <div class="text-red-600 font-black text-xl tracking-wider">
+                    <span class="text-sm text-slate-600 font-bold mr-1">得分:</span><span id="ui-score">0</span>
+                </div>
+            </div>
+
+            <!-- Scenario Area -->
+            <div class="bg-yellow-50 p-4 rounded-xl border-2 border-yellow-400 mb-4 relative mt-2">
+                <div class="absolute -top-3 left-4 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded border-2 border-red-800 transform -rotate-3">情境題</div>
+                <p id="ui-scenario" class="text-slate-800 mt-2 text-[15px] leading-relaxed font-bold"></p>
+            </div>
+
+            <!-- Target Word -->
+            <div class="flex flex-col items-center justify-center mb-6 mt-2">
+                <h2 id="ui-word" class="text-4xl font-black text-emerald-800 tracking-wider mb-3 drop-shadow-md"></h2>
+                <div class="flex gap-3">
+                    <button onclick="playCurrentAudio()" class="text-emerald-800 hover:bg-emerald-100 bg-white rounded-full py-1.5 px-4 flex items-center justify-center gap-2 text-sm border-2 border-emerald-700 font-bold transition-colors shadow-[2px_2px_0px_#047857]">
+                        🔊 女聲發音示範
+                    </button>
+                </div>
+            </div>
+
+            <!-- Options -->
+            <div id="ui-options" class="flex-grow flex flex-col gap-3 justify-end pb-2">
+                <!-- Buttons injected by JS -->
+            </div>
+        </div>
+
+        <div id="modal-feedback" class="absolute inset-0 bg-white/95 flex flex-col items-center justify-center p-6 hidden-screen z-40 backdrop-blur-sm border-4 border-emerald-800 rounded-xl m-2">
+            <div id="feedback-icon" class="text-7xl mb-4 drop-shadow-lg">✅</div>
+            <h3 id="feedback-title" class="text-3xl font-black mb-1"></h3>
+            
+            <div class="text-2xl font-bold text-emerald-700 mb-2 mt-2">
+                <span id="feedback-word"></span> = <span id="feedback-correct-ans" class="text-red-600 tracking-wide bg-yellow-100 px-2 rounded"></span>
+            </div>
+            
+            <div class="text-orange-600 font-bold mb-6 flex items-center gap-2 bg-orange-100 px-4 py-2 rounded-full border border-orange-300">
+                ⏱️ 時間加成: +<span id="feedback-time-bonus">0</span> 分
+            </div>
+            
+            <div class="bg-blue-50 border-2 border-blue-400 p-4 rounded-xl w-full text-left mb-auto mt-4 shadow-sm relative">
+                <div class="absolute -top-3 right-4 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded">解說</div>
+                <h4 class="text-blue-800 font-bold mb-1 text-sm">💡 港漂防坑指北：</h4>
+                <p id="feedback-tip" class="text-slate-700 text-sm leading-relaxed font-bold"></p>
+            </div>
+
+            <button onclick="nextQuestion()" class="w-full retro-btn-primary font-bold py-4 px-8 text-xl mt-6">
+                下一題 ➔
+            </button>
+        </div>
+
+        <div id="screen-end" class="hidden-screen p-6 flex flex-col items-center justify-center h-full text-center relative z-10 bg-amber-50">
+            <div class="text-6xl mb-2">🎓</div>
+            <div class="bg-white border-4 border-red-700 px-6 py-2 rounded mb-4 transform rotate-2">
+                <h1 class="text-3xl font-black text-red-600">學期結算</h1>
+            </div>
+            <p class="text-slate-600 font-bold text-sm mb-6">你已完成所有俗語考驗！</p>
+            
+            <div class="bg-white p-6 rounded-2xl border-4 border-emerald-700 w-full mb-6 relative shadow-[4px_4px_0px_#047857]">
+                <div class="absolute -right-4 -top-4 text-6xl opacity-20">💯</div>
+                <div class="text-sm text-slate-500 font-bold mb-1">最終得分</div>
+                <div class="text-5xl font-black text-red-600 mb-2"><span id="ui-final-score">0</span></div>
+                <div id="ui-rank" class="text-xl font-bold text-orange-500 mt-2 bg-orange-50 inline-block px-3 py-1 rounded-full border border-orange-200"></div>
+            </div>
+
+            <div id="save-score-section" class="w-full bg-white p-4 rounded-xl border-2 border-slate-300 mb-6 shadow-sm">
+                <p class="text-sm font-bold text-slate-700 mb-3">留下大名，登入龍虎榜！</p>
+                <div class="flex gap-2">
+                    <input type="text" id="player-name" placeholder="輸入你的花名..." class="flex-grow bg-slate-50 border-2 border-slate-300 rounded-lg px-3 py-2 text-slate-800 outline-none focus:border-emerald-500 font-bold">
+                    <button id="btn-save-score" onclick="saveScore()" class="retro-btn-secondary font-bold py-2 px-4 whitespace-nowrap">
+                        提交分數
+                    </button>
+                </div>
+                <p id="save-status" class="text-xs text-emerald-600 font-bold mt-2 hidden">✅ 已成功上榜！</p>
+            </div>
+
+            <div class="flex w-full gap-3">
+                <button onclick="resetGame()" class="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-bold py-3 px-2 rounded-xl transition-all text-sm border-2 border-slate-300 shadow-[2px_2px_0px_#cbd5e1]">
+                    🔄 再玩一次
+                </button>
+                <button onclick="showLeaderboardScreen()" class="flex-1 retro-btn-primary font-bold py-3 px-2 text-sm">
+                    🏆 睇龍虎榜
+                </button>
+            </div>
+        </div>
+
+        <div id="screen-leaderboard" class="hidden-screen p-6 flex flex-col h-full bg-amber-50 relative z-20">
+            <div class="bg-white border-4 border-red-700 px-4 py-2 rounded mt-4 mb-6 transform -rotate-1 mx-auto">
+                <h2 class="text-3xl font-black text-center text-red-600">🔥 俗語龍虎榜</h2>
+            </div>
+            
+            <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar bg-white rounded-xl border-2 border-emerald-800 p-2 shadow-inner" id="leaderboard-list">
+                <!-- Data injected here -->
+                <div class="text-center text-slate-500 font-bold mt-10">載入中...</div>
+            </div>
+
+            <button onclick="showStartScreen()" class="w-full retro-btn-secondary font-bold py-4 px-8 text-lg mt-6">
+                返回主選單
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        /* 
+         * 題庫設計：根據《廣東俗語典故》提取20個實用詞彙。
+         * 情境：緊貼香港大專生日常（Project, Hall, 交通, 見工）。
+         * 干擾項：針對內地生常見的漢語拼音習慣設定。
+         */
+        const gameData = [
+            {
+                word: "放飛機",
+                scenario: "約咗Groupmate今晚圖書館通宵傾Project，結果等咗半個鐘，佢Send WhatsApp話唔嚟...",
+                correct: "fong3 fei1 gei1",
+                options: ["fang4 fei1 ji1", "fong3 fei1 gei1", "fong3 fei1 gei3"],
+                tip: "【意思：爽約】受普通話(fàng)影響容易讀錯，留意粵拼『放』係第3聲。普通話叫『放鴿子』。"
+            },
+            {
+                word: "七國咁亂",
+                scenario: "入到Hall（宿舍）見到室友個位滿地垃圾，衫褲亂丟，外賣盒堆到山咁高...",
+                correct: "cat1 gwok3 gam3 lyun6",
+                options: ["qi1 guo2 gan3 luan4", "cat1 gwok3 gam2 lyun6", "cat1 gwok3 gam3 lyun6"],
+                tip: "【意思：亂七八糟】出自西漢『七國之亂』。『咁』(gam3) 係程度副詞，切勿讀成第2聲。"
+            },
+            {
+                word: "搞出個大頭佛",
+                scenario: "做FYP（畢業論文）嗰陣，唔小心Delete咗全組人做咗成個月嘅Data...",
+                correct: "gaau2 ceot1 go3 daai6 tau4 fat6",
+                options: ["gaau2 ceot1 go3 daai6 tau4 fat6", "gao3 chu1 geo3 daa6 tau4 fa6", "gaau2 coet1 go3 daai6 tau4 fat1"],
+                tip: "【意思：闖大禍】大頭佛源於舞獅。注意『佛』係入聲字 (fat6)，收音要急促。"
+            },
+            {
+                word: "水蛇春咁長",
+                scenario: "教授Send咗封Email嚟解釋Mid-term範圍，足足寫咗三千字，碌極都碌唔完...",
+                correct: "seoi2 se4 ceon1 gam3 coeng4",
+                options: ["shui3 she2 chun1 gam3 cheung4", "seoi2 se4 ceon1 gam3 coeng4", "seoi2 se4 ceon1 gan3 coeng4"],
+                tip: "【意思：冗長】『春』(ceon1) 喺廣東話可指卵，水蛇卵連成一條好長。粵拼沒有 sh/ch，請用 s/c 發音。"
+            },
+            {
+                word: "十劃未有一撇",
+                scenario: "阿媽打電話嚟問：『阿仔，你畢業後搵到工未呀？』你答：『履歷表都未寫好...』",
+                correct: "sap6 waak6 mei6 jau5 jat1 pit3",
+                options: ["sap6 waak6 mei6 jau5 jat1 pit3", "shi2 hua4 wei4 you3 yi1 pie3", "sap6 waak6 mei6 jau5 jat1 pit1"],
+                tip: "【意思：事情剛開始，毫無頭緒】注意『撇』(pit3) 係入聲，跟普通話(piě)發音和聲調完全不同。"
+            },
+            {
+                word: "食人隻車",
+                scenario: "搞O-Camp（迎新營），有莊員提議每人收$2000營費，大家嘩然...",
+                correct: "sik6 jan4 zek3 geoi1",
+                options: ["sik6 jan4 zek3 ce1", "shi2 ren2 zhi1 che1", "sik6 jan4 zek3 geoi1"],
+                tip: "【意思：要求過分/貪得無厭】⚠️ 這是大坑！象棋俗語中的『車』必須讀作 geoi1（居），絕不能讀 ce1！"
+            },
+            {
+                word: "車大砲",
+                scenario: "有個同學成日話自己識好多大老闆，畢業包保做到Management Trainee，大家心諗...",
+                correct: "ce1 daai6 paau3",
+                options: ["ce1 daai6 paau3", "che1 da4 pao4", "ce1 daai6 paau4"],
+                tip: "【意思：吹牛/說謊】本字為『扯大奅』，現多寫作車大砲。普通話常對應『吹牛』或『侃大山』。"
+            },
+            {
+                word: "執笠",
+                scenario: "疫情過後，學校門口嗰間大家最鍾意食嘅平價茶餐廳終於撐唔住，結業關門...",
+                correct: "zap1 lap1",
+                options: ["zhi2 li4", "zap1 lap1", "zap1 lap6"],
+                tip: "【意思：倒閉】『執』(zap1) 和『笠』(lap1) 都是急促的入聲字，沒有鼻音尾。"
+            },
+            {
+                word: "大鑊",
+                scenario: "今朝8:30有必修科Mid-term，結果你8:45先喺床上扎醒...",
+                correct: "daai6 wok6",
+                options: ["daai6 huo4", "daai6 wok1", "daai6 wok6"],
+                tip: "【意思：糟糕/大麻煩】『鑊』對應普通話的『鍋』，粵拼讀 wok6。發生慘劇時必用字！"
+            },
+            {
+                word: "掂過碌蔗",
+                scenario: "考完Mid-term出咗成績，GPA過4，又成功申請到Dream Company嘅Intern...",
+                correct: "dim6 gwo3 luk1 ze3",
+                options: ["dim6 gwo3 luk1 ze3", "dian4 guo4 lu1 zhe4", "dim6 gwo3 luk1 ze4"],
+                tip: "【意思：非常順利】廣東話「掂」有順利、好嘅意思；蔗又直又甜。切忌用普通話發音直讀「蔗(zhe4)」，粵拼係 ze3。"
+            },
+            {
+                word: "買棺材唔知埞",
+                scenario: "見到有個同學喺保安叔叔面前跨過欄杆走捷徑...",
+                correct: "maai5 gun1 coi4 m4 zi1 deng6",
+                options: ["mai5 guan1 cai2 m4 zi1 deng6", "maai5 gun1 coi4 m4 zi1 deng6", "maai5 gun1 coi4 m4 zi1 di6"],
+                tip: "【意思：不知死活】『埞』(deng6) 意思是地方，不知道去哪裡買棺材，比喻極度危險、魯莽。"
+            },
+            {
+                word: "得個吉",
+                scenario: "排咗一個鐘隊買Canteen限量版燒味飯，排到你嗰陣阿姐話：『賣晒啦！』",
+                correct: "dak1 go3 gat1",
+                options: ["dak1 go3 gat1", "de2 ge4 ji2", "dak1 go3 gat6"],
+                tip: "【意思：一場空】廣東人避諱『空』(凶) 音，所以將『得個空』反過來說成『得個吉』。"
+            },
+            {
+                word: "係咁意",
+                ttsWord: "係咁椅",
+                scenario: "上Tutorial（導修課）被Tutor抽中答問題，你根本無溫書，唯有隨便講兩句交差...",
+                correct: "hai6 gam3 ji2",
+                options: ["hai6 gam3 ji3", "hai6 gam3 ji2", "xi4 gam3 ji3"],
+                tip: "【意思：隨便應付/意思意思】注意變調！這裡的『意』習慣變調讀第二聲 (ji2)，而非原本的 ji3。"
+            },
+            {
+                word: "話之你",
+                scenario: "Groupmate抱怨功課好難做唔切，但佢尋晚明明打機打通宵，你心諗...",
+                correct: "waa6 zi1 nei5",
+                options: ["hua4 zhi1 ni3", "waa6 zi1 lei5", "waa6 zi1 nei5"],
+                tip: "【意思：懶得理你】『之』(zi1) 是語氣助詞。請注意 n/l 分野，『你』是 nei5 而非 lei5。"
+            },
+            {
+                word: "甩底",
+                scenario: "約好咗今晚全宿生大會，點知會長臨時話肚痛唔出席，搞到全場呆等...",
+                correct: "lat1 dai2",
+                options: ["lat1 dai2", "shuai3 di3", "lat1 dai3"],
+                tip: "【意思：爽約/計劃落空】原指瓦煲底部脫落導致食物全毀。比『放飛機』應用範圍更廣。"
+            },
+            {
+                word: "打醒十二分精神",
+                scenario: "聽日就係Final Exam（期末考），呢科阿Sir出名會出陷阱題...",
+                correct: "daa2 sing2 sap6 ji6 fan1 zing1 san4",
+                options: ["daa2 xing2 sap6 ji6 fen1 zing1 san4", "daa2 sing2 sap6 ji6 fan1 zing1 san4", "daa2 sing2 sap6 yi6 fan1 zing1 san4"],
+                tip: "【意思：格外留神】粵拼無 x/y。十二分比十分滿分還要多，強調全神貫注。"
+            },
+            {
+                word: "攞命",
+                scenario: "今個Sem（學期）日日都要天地堂（早上8:30上課，中間空檔到傍晚再上課）...",
+                correct: "lo2 meng6",
+                options: ["lo2 meng6", "lo2 ming6", "la2 meng6"],
+                tip: "【意思：要命(多指辛苦)】『攞』(lo2) 是拿取的意思，易與普通話『拿』混淆。口語中『命』常變調讀作 meng6。"
+            },
+            {
+                word: "事急馬行田",
+                scenario: "聽朝Deadline交Paper，但部電腦死咗機，唯有用手機打幾千字頂住檔先...",
+                correct: "si6 gap1 maa5 haang4 tin4",
+                options: ["si6 gap1 maa5 haang4 tin4", "shi4 ji2 ma3 xing2 tian2", "si6 gap1 maa5 hang4 tin4"],
+                tip: "【意思：危急下用非常規辦法】來自象棋，馬本應走『日』，情急之下只能走『田』。"
+            },
+            {
+                word: "擺明車馬",
+                scenario: "個Groupmate每次開會都特登坐喺靚女隔籬，係人都睇得出佢想點...",
+                correct: "baai2 ming4 geoi1 maa5",
+                options: ["baai2 ming4 ce1 maa5", "baai2 ming4 geoi1 maa5", "bai2 ming4 geoi1 ma5"],
+                tip: "【意思：意圖明顯】⚠️ 再次警告！象棋相關俗語，『車』讀 geoi1。擺出戰陣，形容毫不掩飾。"
+            },
+            {
+                word: "一句講晒",
+                scenario: "聽完同學抱怨咗半個鐘頭Course registration（搶課）系統有幾廢，你總結：...",
+                correct: "jat1 geoi3 gong2 saai3",
+                options: ["yi1 geoi3 gong2 saai3", "jat1 geoi3 gong2 saai3", "jat1 jui3 gong2 saai3"],
+                tip: "【意思：總而言之】『晒』(saai3) 在粵語中常作副詞，表示『全部、完畢』。"
+            }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let shuffledQuestions = [];
+        const BASE_SCORE = 100;
+        
+        // Timer mechanics
+        let timerInterval;
+        let timeLeft = 100; // Represents percentage (100% to 0%)
+        const TIME_LIMIT_MS = 30000; // 30 seconds per question
+        const TICK_RATE = 50;
+
+        /* Voice settings */
+        let hkVoices = [];
+        function initVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            hkVoices = voices.filter(v => v.lang === 'zh-HK' || v.lang === 'yue-Hant-HK' || v.lang.includes('HK'));
+        }
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = initVoices;
+            initVoices();
+        }
+
+        /* Helper Functions */
+        function shuffleArray(array) {
+            let curId = array.length;
+            while (0 !== curId) {
+                let randId = Math.floor(Math.random() * curId);
+                curId -= 1;
+                let tmp = array[curId];
+                array[curId] = array[randId];
+                array[randId] = tmp;
+            }
+            return array;
+        }
+
+        function $(id) { return document.getElementById(id); }
+
+        function showScreen(screenId) {
+            ['screen-start', 'screen-game', 'modal-feedback', 'screen-end', 'screen-leaderboard'].forEach(id => {
+                if(!$(id).classList.contains('hidden-screen')) {
+                    $(id).classList.add('hidden-screen');
+                    $(id).classList.remove('fade-enter-active', 'fade-enter');
+                }
+            });
+            const el = $(screenId);
+            el.classList.remove('hidden-screen');
+            el.classList.add('fade-enter');
+            setTimeout(() => el.classList.add('fade-enter-active'), 20);
+        }
+
+        window.startGame = function() {
+            currentQuestionIndex = 0;
+            score = 0;
+            $('ui-score').innerText = score;
+            shuffledQuestions = shuffleArray([...gameData]); 
+            showScreen('screen-game');
+            loadQuestion();
+        }
+
+        window.showStartScreen = function() { showScreen('screen-start'); }
+        window.resetGame = function() { showStartScreen(); }
+
+        function loadQuestion() {
+            const q = shuffledQuestions[currentQuestionIndex];
+            
+            $('ui-question-count').innerText = `${currentQuestionIndex + 1} / ${shuffledQuestions.length}`;
+            $('ui-scenario').innerText = q.scenario;
+            $('ui-word').innerText = q.word;
+
+            const optionsContainer = $('ui-options');
+            optionsContainer.innerHTML = '';
+            
+            const shuffledOptions = shuffleArray([...q.options]);
+
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "btn-option w-full py-4 px-6 text-[17px] text-left flex justify-between font-bold hover:bg-emerald-50";
+                btn.innerHTML = `<span>${opt}</span> <span class="text-slate-400 text-sm">👈</span>`;
+                btn.onclick = () => checkAnswer(opt, q);
+                optionsContainer.appendChild(btn);
+            });
+
+            startTimer();
+            // Automatically play voice when question loads to help learning
+            // playCurrentAudio(); // Optional: uncomment if auto-play is desired
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timeLeft = 100;
+            const timerBar = $('timer-bar');
+            timerBar.style.width = '100%';
+            timerBar.classList.remove('timer-warning');
+
+            const decreaseAmount = 100 / (TIME_LIMIT_MS / TICK_RATE);
+
+            timerInterval = setInterval(() => {
+                timeLeft -= decreaseAmount;
+                timerBar.style.width = `${Math.max(0, timeLeft)}%`;
+                
+                if (timeLeft < 30) {
+                    timerBar.classList.add('timer-warning');
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    handleTimeOut();
+                }
+            }, TICK_RATE);
+        }
+
+        function handleTimeOut() {
+            const q = shuffledQuestions[currentQuestionIndex];
+            checkAnswer(null, q, true); // null option means timeout
+        }
+
+        window.speakCantonese = function(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-HK';
+                utterance.rate = 0.85; 
+                
+                if (hkVoices.length > 0) {
+                    const femaleVoice = hkVoices.find(v => 
+                        v.name.includes('Sin-ji') || v.name.includes('HiuMaan') || 
+                        v.name.includes('Google') || v.name.includes('Mei-Jia')
+                    );
+                    utterance.voice = femaleVoice || hkVoices[0];
+                }
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        window.playCurrentAudio = function() {
+            const q = shuffledQuestions[currentQuestionIndex];
+            speakCantonese(q.ttsWord || q.word);
+        }
+
+        function checkAnswer(selectedOption, questionData, isTimeout = false) {
+            clearInterval(timerInterval);
+            const isCorrect = selectedOption === questionData.correct;
+            
+            speakCantonese(questionData.ttsWord || questionData.word);
+
+            let timeBonus = 0;
+            if (isCorrect && !isTimeout) {
+                // Calculate time bonus (max 50 points based on speed)
+                timeBonus = Math.floor((timeLeft / 100) * 50);
+                score += (BASE_SCORE + timeBonus);
+                $('ui-score').innerText = score;
+            }
+
+            // Update UI modal
+            const fbIcon = $('feedback-icon');
+            const fbTitle = $('feedback-title');
+            const fbWord = $('feedback-word');
+            const fbAns = $('feedback-correct-ans');
+            const fbTip = $('feedback-tip');
+            const fbBonus = $('feedback-time-bonus');
+
+            fbWord.innerText = questionData.word;
+            fbAns.innerText = questionData.correct;
+            fbTip.innerHTML = questionData.tip;
+            fbBonus.innerText = timeBonus;
+
+            if(isTimeout) {
+                fbIcon.innerText = "⏰";
+                fbTitle.innerText = "太慢啦！";
+                fbTitle.className = "text-3xl font-black mb-1 text-orange-600";
+            } else if(isCorrect) {
+                fbIcon.innerText = "🎯";
+                fbTitle.innerText = "識貨！(完全正確)";
+                fbTitle.className = "text-3xl font-black mb-1 text-emerald-600";
+            } else {
+                fbIcon.innerText = "❌";
+                fbTitle.innerText = "中伏啦！(受干擾)";
+                fbTitle.className = "text-3xl font-black mb-1 text-red-600";
+            }
+
+            showScreen('modal-feedback');
+        }
+
+        window.nextQuestion = function() {
+            currentQuestionIndex++;
+            if (currentQuestionIndex < shuffledQuestions.length) {
+                showScreen('screen-game');
+                loadQuestion();
+            } else {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            $('ui-final-score').innerText = score;
+            
+            let rank = "";
+            let maxBaseScore = shuffledQuestions.length * BASE_SCORE;
+            let ratio = score / maxBaseScore; // Doesn't account for bonus, which is fine for rank
+
+            if (ratio >= 1.2) {
+                rank = "🌟 榮譽港漂 (神級語速)";
+            } else if (ratio >= 0.9) {
+                rank = "😎 地道Local (完全融入)";
+            } else if (ratio >= 0.6) {
+                rank = "🏃 努力適應中 (仲有進步空間)";
+            } else {
+                rank = "✈️ 剛落機 (小心行路唔帶眼)";
+            }
+            
+            $('ui-rank').innerText = rank;
+            
+            // Reset saving UI
+            $('save-status').classList.add('hidden');
+            $('btn-save-score').disabled = false;
+            $('btn-save-score').classList.remove('opacity-50');
+            $('player-name').value = '';
+            $('save-score-section').classList.remove('hidden');
+
+            // Only show save option if score > 0
+            if(score === 0) $('save-score-section').classList.add('hidden');
+
+            showScreen('screen-end');
+        }
+
+        window.saveScore = async function() {
+            if (!window.auth || !window.auth.currentUser) {
+                alert("數據庫連線中，請稍候再試。");
+                return;
+            }
+
+            const playerName = $('player-name').value.trim() || '神秘港漂';
+            const btn = $('btn-save-score');
+            
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            btn.innerText = "上傳中...";
+
+            try {
+                // Rule 1: Strict Paths for public data
+                const colRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'leaderboard');
+                await addDoc(colRef, {
+                    name: playerName.substring(0, 10), // limit length
+                    score: score,
+                    timestamp: Date.now()
+                });
+                
+                $('save-status').classList.remove('hidden');
+                btn.innerText = "已提交";
+                
+                // Jump to leaderboard after brief delay
+                setTimeout(showLeaderboardScreen, 1000);
+            } catch (error) {
+                console.error("Error saving score: ", error);
+                btn.innerText = "提交失敗";
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+        }
+
+        window.showLeaderboardScreen = async function() {
+            showScreen('screen-leaderboard');
+            const listDiv = $('leaderboard-list');
+            listDiv.innerHTML = '<div class="text-center text-slate-400 mt-10 animate-pulse">載入龍虎榜中...</div>';
+
+            if (!window.auth || !window.auth.currentUser) {
+                listDiv.innerHTML = '<div class="text-center text-red-400 mt-10">無法連線至伺服器</div>';
+                return;
+            }
+
+            try {
+                // Rule 1 & 2: Simple query, sort in memory if complex, but orderBy score is a simple index usually allowed if generated.
+                // To be strictly safe per Rule 2 (No Complex Queries requiring indexes), we fetch and sort in memory.
+                const colRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'leaderboard');
+                const querySnapshot = await getDocs(colRef);
+                
+                let records = [];
+                querySnapshot.forEach((doc) => {
+                    records.push(doc.data());
+                });
+
+                // Sort descending in memory
+                records.sort((a, b) => b.score - a.score);
+                // Limit to top 100
+                records = records.slice(0, 50);
+
+                if (records.length === 0) {
+                    listDiv.innerHTML = '<div class="text-center text-slate-400 mt-10">暫無記錄，快啲爭取第一名啦！</div>';
+                    return;
+                }
+
+                let html = '';
+                records.forEach((record, index) => {
+                    let medal = '';
+                    if (index === 0) medal = '🥇';
+                    else if (index === 1) medal = '🥈';
+                    else if (index === 2) medal = '🥉';
+                    else medal = `<span class="text-slate-400 text-sm inline-block w-[20px]">${index+1}</span>`;
+
+                    let rowClass = index % 2 === 0 ? 'bg-slate-50' : 'bg-white';
+                    let textClass = index < 3 ? 'text-red-600 font-bold' : 'text-slate-700 font-bold';
+
+                    html += `
+                        <div class="flex justify-between items-center p-3 rounded-lg ${rowClass} mb-2 border border-slate-200">
+                            <div class="flex items-center gap-3">
+                                <div class="text-xl w-[30px] text-center">${medal}</div>
+                                <div class="font-bold text-slate-800">${escapeHtml(record.name)}</div>
+                            </div>
+                            <div class="${textClass} text-xl">${record.score}</div>
+                        </div>
+                    `;
+                });
+                
+                listDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error("Error loading leaderboard: ", error);
+                listDiv.innerHTML = '<div class="text-center text-red-400 mt-10">載入失敗，請稍後再試。</div>';
+            }
+        }
+
+        // Prevent XSS in leaderboard names
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
